@@ -1,0 +1,29 @@
+apply plugin: 'java'
+apply plugin: 'application'
+
+mainClassName = 'acmi.l2.clientmod.smconv.Main'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url "https://raw.githubusercontent.com/acmi/L2io/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/Serializer/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/L2crypt/mvn-repo" }
+    maven { url "https://raw.githubusercontent.com/acmi/L2unreal/mvn-repo" }
+}
+
+dependencies {
+    compile group:'acmi.l2.clientmod', name:'l2unreal', version: '1.5.+'
+}
+
+jar {
+    configurations.compile.collect {
+        from(zipTree(it)) {
+            exclude 'META-INF/**'
+        }
+    }
+
+    manifest {
+        attributes('Main-Class': mainClassName)
+    }
+}
