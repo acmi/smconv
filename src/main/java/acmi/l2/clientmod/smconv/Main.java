@@ -32,10 +32,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 public class Main {
     private static int version = 118;
@@ -74,27 +71,30 @@ public class Main {
         try (UnrealPackage up = new UnrealPackage(file, false)) {
             Map<UnrealPackage.ExportEntry, StaticMesh> map = new LinkedHashMap<>();
             Map<UnrealPackage.ExportEntry, byte[]> propertiesMap = new HashMap<>();
+            List<UnrealPackage.ExportEntry> toRemove = new ArrayList<>();
 
             SerializerFactory<UnrealPackageContext> serializer = new ReflectionSerializerFactory<>();
             UnrealPackageContext context = new UnrealPackageContext(up);
             for (UnrealPackage.ExportEntry entry : up.getExportTable()) {
-                if (!entry.getFullClassName().equalsIgnoreCase("Engine.StaticMesh"))
-                    continue;
-
-                StaticMesh sm = new StaticMesh();
-                ByteBuffer buffer = ByteBuffer.wrap(entry.getObjectRawData()).order(ByteOrder.LITTLE_ENDIAN);
-                DataInput di = DataInput.dataInput(buffer, up.getFile().getCharset());
-                ObjectInput<UnrealPackageContext> oi = ObjectInput.objectInput(di, serializer, context);
-                PropertiesUtil.iterateProperties(oi, up);
-                byte[] properties = new byte[buffer.position()];
-                System.arraycopy(buffer.array(), 0, properties, 0, properties.length);
-                propertiesMap.put(entry, properties);
-                oi.getSerializerFactory().forClass(Object.Box.class).readObject(sm.boundingBox = new Object.Box(), oi);
-                oi.getSerializerFactory().forClass(Object.Sphere.class).readObject(sm.boundingSphere = new Object.Sphere(), oi);
-                sm.readStaticMesh(oi);
-                map.put(entry, sm);
-                if (buffer.position() != buffer.limit())
-                    throw new IllegalStateException(entry.getObjectFullName() + " " + up.getVersion() + "_" + up.getLicense() + " " + buffer.position() + "/" + buffer.limit());
+                if (entry.getFullClassName().equalsIgnoreCase("Engine.StaticMesh")) {
+                    StaticMesh sm = new StaticMesh();
+                    ByteBuffer buffer = ByteBuffer.wrap(entry.getObjectRawData()).order(ByteOrder.LITTLE_ENDIAN);
+                    DataInput di = DataInput.dataInput(buffer, up.getFile().getCharset());
+                    ObjectInput<UnrealPackageContext> oi = ObjectInput.objectInput(di, serializer, context);
+                    PropertiesUtil.iterateProperties(oi, up);
+                    byte[] properties = new byte[buffer.position()];
+                    System.arraycopy(buffer.array(), 0, properties, 0, properties.length);
+                    propertiesMap.put(entry, properties);
+                    oi.getSerializerFactory().forClass(Object.Box.class).readObject(sm.boundingBox = new Object.Box(), oi);
+                    oi.getSerializerFactory().forClass(Object.Sphere.class).readObject(sm.boundingSphere = new Object.Sphere(), oi);
+                    sm.readStaticMesh(oi);
+                    map.put(entry, sm);
+                    if (buffer.position() != buffer.limit())
+                        throw new IllegalStateException(entry.getObjectFullName() + " " + up.getVersion() + "_" + up.getLicense() + " " + buffer.position() + "/" + buffer.limit());
+                } else if (entry.getFullClassName().equalsIgnoreCase("Engine.Model") ||
+                        entry.getFullClassName().equalsIgnoreCase("Engine.Polys")) {
+                    toRemove.add(entry);
+                }
             }
 
             up.setVersion(version);
@@ -111,6 +111,13 @@ public class Main {
                 entry.getKey().setObjectRawData(baos.toByteArray());
             }
 
+            for (UnrealPackage.ExportEntry entry : toRemove) {
+                System.out.println("\tRemove: " + entry);
+                up.removeExport(entry.getIndex());
+            }
+            up.updateExportTable(exports -> {
+            });
+
             System.out.println("Patched: " + file);
         } catch (Throwable e) {
             System.err.println(file);
@@ -119,6 +126,11 @@ public class Main {
     }
 
     public static void main(String[] args) {
+        if (args.length != 3) {
+            System.out.println("USAGE: java -jar smconv.jar C:\\Lineage2\\StaticMeshes 118 0");
+            System.out.println("NOTE: it doesn't decrypt files, you have to do it manually");
+            System.exit(1);
+        }
         version = Integer.parseInt(args[1]);
         license = Integer.parseInt(args[2]);
         processFileOrFolder(new File(args[0]).getAbsoluteFile());
